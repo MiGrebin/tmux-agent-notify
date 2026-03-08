@@ -72,7 +72,8 @@ func (p *Popup) Run() error {
 	p.tty = input
 
 	fmt.Print("\033[?25l")
-	defer fmt.Print("\033[0m\033[?25h")
+	fmt.Print("\033[?7l")
+	defer fmt.Print("\033[0m\033[?7h\033[?25h")
 
 	if err := p.collectRows(); err != nil {
 		return err
@@ -311,7 +312,7 @@ func (p *Popup) renderScreen() {
 	}
 
 	p.lastScreen = screen
-	fmt.Printf("\033[H\033[2J%s\n", screen)
+	fmt.Printf("\033[2J\033[H%s", screen)
 }
 
 func (p *Popup) buildScreen() string {
@@ -531,8 +532,8 @@ func (p *Popup) globalSummaryLine() string {
 
 func (p *Popup) screenWidth() int {
 	if width, err := terminalWidth(p.tty); err == nil && width >= 40 {
-		if width > 4 {
-			return width - 2
+		if width > 6 {
+			return width - 4
 		}
 		return width
 	}
@@ -547,8 +548,8 @@ func (p *Popup) screenWidth() int {
 		return 80
 	}
 
-	if width > 4 {
-		return width - 2
+	if width > 6 {
+		return width - 4
 	}
 
 	return width
