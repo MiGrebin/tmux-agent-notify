@@ -27,6 +27,7 @@ const (
 
 type Popup struct {
 	tmux          *tmuxcli.Client
+	tty           *os.File
 	rows          []row
 	selectedIndex int
 	lastScreen    string
@@ -68,6 +69,7 @@ func (p *Popup) Run() error {
 		return err
 	}
 	defer state.restore()
+	p.tty = input
 
 	fmt.Print("\033[?25l")
 	defer fmt.Print("\033[0m\033[?25h")
@@ -528,6 +530,13 @@ func (p *Popup) globalSummaryLine() string {
 }
 
 func (p *Popup) screenWidth() int {
+	if width, err := terminalWidth(p.tty); err == nil && width >= 40 {
+		if width > 4 {
+			return width - 2
+		}
+		return width
+	}
+
 	value, err := p.tmux.DisplayFormat("#{client_width}", "")
 	if err != nil {
 		return 80
@@ -538,7 +547,36 @@ func (p *Popup) screenWidth() int {
 		return 80
 	}
 
+	if width > 4 {
+		return width - 2
+	}
+
 	return width
+}
+
+func terminalWidth(input *os.File) (int, error) {
+	if input == nil {
+		return 0, fmt.Errorf("no terminal available")
+	}
+
+	cmd := exec.Command("stty", "size")
+	cmd.Stdin = input
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, err
+	}
+
+	fields := strings.Fields(strings.TrimSpace(string(output)))
+	if len(fields) != 2 {
+		return 0, fmt.Errorf("unexpected stty size output %q", strings.TrimSpace(string(output)))
+	}
+
+	width, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return 0, err
+	}
+
+	return width, nil
 }
 
 func enterRawMode() (*os.File, *terminalState, error) {
