@@ -20,9 +20,52 @@ set_tmux_option() {
   tmux set-option -gq "$option" "$value"
 }
 
+set_tmux_target_option() {
+  local scope="$1"
+  local target="$2"
+  local option="$3"
+  local value="${4:-}"
+
+  case "$scope" in
+    pane)
+      tmux set-option -pq -t "$target" "$option" "$value"
+      ;;
+    window)
+      tmux set-option -wq -t "$target" "$option" "$value"
+      ;;
+    session)
+      tmux set-option -q -t "$target" "$option" "$value"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 unset_tmux_option() {
   local option="$1"
   tmux set-option -gu "$option" >/dev/null 2>&1 || true
+}
+
+unset_tmux_target_option() {
+  local scope="$1"
+  local target="$2"
+  local option="$3"
+
+  case "$scope" in
+    pane)
+      tmux set-option -pu -t "$target" "$option" >/dev/null 2>&1 || true
+      ;;
+    window)
+      tmux set-option -wu -t "$target" "$option" >/dev/null 2>&1 || true
+      ;;
+    session)
+      tmux set-option -u -t "$target" "$option" >/dev/null 2>&1 || true
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 pane_key() {

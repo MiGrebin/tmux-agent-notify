@@ -9,8 +9,20 @@ monitor_pid_option="@agent_notify_monitor_pid"
 status_option="@agent_notify_status"
 attention_panes_option="@agent_notify_attention_panes"
 done_panes_option="@agent_notify_done_panes"
+all_panes_option="@agent_notify_all_panes"
 lock_key="$(printf '%s' "$CURRENT_DIR" | cksum | awk '{print $1}')"
 lock_dir="/tmp/tmux-agent-notify-${lock_key}.lock"
+separator=$'\037'
+
+pane_agent_option="@agent_notify_is_agent"
+pane_kind_label_option="@agent_notify_pane_kind_label"
+pane_state_option="@agent_notify_pane_state"
+pane_state_badge_option="@agent_notify_pane_state_badge"
+pane_label_option="@agent_notify_pane_label"
+window_has_agents_option="@agent_notify_window_has_agents"
+window_summary_option="@agent_notify_window_summary"
+session_has_agents_option="@agent_notify_session_has_agents"
+session_summary_option="@agent_notify_session_summary"
 
 agent_process_pattern=""
 attention_patterns=""
@@ -45,10 +57,10 @@ status_text() {
     return
   fi
 
-  text="#[fg=colour39,bold]AI#[default]"
+  text="#[fg=colour39 bold]AI#[default]"
 
   if [ "$attention_count" -gt 0 ]; then
-    text="${text} #[fg=colour214,bold]!${attention_count}#[default]"
+    text="${text} #[fg=colour214 bold]!${attention_count}#[default]"
   fi
 
   if [ "$done_count" -gt 0 ]; then
@@ -135,6 +147,105 @@ is_actionable_pane() {
   should_notify_for_pane "$1" "$2" "$3"
 }
 
+display_state_for_pane() {
+  local state="$1"
+  local pane_active="$2"
+  local window_active="$3"
+  local session_attached="$4"
+
+  if should_notify_for_pane "$pane_active" "$window_active" "$session_attached"; then
+    printf '%s\n' "$state"
+  else
+    printf 'current\n'
+  fi
+}
+
+pane_count_word() {
+  if [ "$1" -eq 1 ]; then
+    printf 'pane'
+  else
+    printf 'panes'
+  fi
+}
+
+kind_label() {
+  case "$1" in
+    codex) printf 'Codex\n' ;;
+    claude) printf 'Claude\n' ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+pane_state_badge() {
+  case "$1" in
+    attention) printf '#[fg=colour214 bold]! input#[default]\n' ;;
+    done) printf '#[fg=colour42]D waiting#[default]\n' ;;
+    busy) printf '#[fg=colour245]B busy#[default]\n' ;;
+    current) printf '#[fg=colour39 bold]C current#[default]\n' ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+summary_badge() {
+  local attention_count="$1"
+  local done_count="$2"
+  local busy_count="$3"
+  local current_count="$4"
+  local pane_count="$5"
+  local text=""
+
+  if [ "$attention_count" -gt 0 ]; then
+    text="${text} #[fg=colour214 bold]!${attention_count}#[default]"
+  fi
+
+  if [ "$done_count" -gt 0 ]; then
+    text="${text} #[fg=colour42]D${done_count}#[default]"
+  fi
+
+  if [ "$busy_count" -gt 0 ]; then
+    text="${text} #[fg=colour245]B${busy_count}#[default]"
+  fi
+
+  if [ "$current_count" -gt 0 ]; then
+    text="${text} #[fg=colour39 bold]C${current_count}#[default]"
+  fi
+
+  text="${text} #[fg=colour244](${pane_count} $(pane_count_word "$pane_count"))#[default]"
+  trim_whitespace "$text"
+}
+
+pane_item_label() {
+  local window_name="$1"
+  local pane_title="$2"
+  local pane_current_path="$3"
+  local basename=""
+  local label=""
+
+  if [ -n "$pane_current_path" ]; then
+    basename="${pane_current_path##*/}"
+  fi
+
+  if [ -n "$window_name" ]; then
+    label="$window_name"
+  elif [ -n "$basename" ]; then
+    label="$basename"
+  fi
+
+  if [ -n "$pane_title" ] && [ "$pane_title" != "$window_name" ]; then
+    if [ -n "$label" ]; then
+      label="${label} - ${pane_title}"
+    else
+      label="$pane_title"
+    fi
+  fi
+
+  if [ -z "$label" ]; then
+    label="$pane_current_path"
+  fi
+
+  printf '%s\n' "$label"
+}
+
 pane_label() {
   local session_name="$1"
   local window_index="$2"
@@ -177,9 +288,138 @@ notify_for_state() {
   esac
 }
 
+clear_tree_metadata() {
+  local target
+  local previous_panes previous_windows previous_sessions
+
+  previous_panes="$(tmux list-panes -a -f "#{==:#{${pane_agent_option}},1}" -F '#{pane_id}' 2>/dev/null || true)"
+  previous_windows="$(tmux list-windows -a -f "#{==:#{${window_has_agents_option}},1}" -F '#{session_name}:#{window_index}' 2>/dev/null || true)"
+  previous_sessions="$(tmux list-sessions -f "#{==:#{${session_has_agents_option}},1}" -F '#{session_name}' 2>/dev/null || true)"
+
+  while IFS= read -r target; do
+    if [ -n "$target" ]; then
+      set_tmux_target_option pane "$target" "$pane_agent_option" "0"
+    fi
+  done <<EOF
+$previous_panes
+EOF
+
+  while IFS= read -r target; do
+    if [ -n "$target" ]; then
+      set_tmux_target_option window "$target" "$window_has_agents_option" "0"
+    fi
+  done <<EOF
+$previous_windows
+EOF
+
+  while IFS= read -r target; do
+    if [ -n "$target" ]; then
+      set_tmux_target_option session "$target" "$session_has_agents_option" "0"
+    fi
+  done <<EOF
+$previous_sessions
+EOF
+}
+
+apply_tree_metadata() {
+  local agent_rows="$1"
+  local aggregate_rows=""
+  local summary_rows=""
+  local pane_id kind state display_state session_name window_index pane_index pane_title pane_current_path window_name
+
+  clear_tree_metadata
+
+  if [ -z "$agent_rows" ]; then
+    return
+  fi
+
+  while IFS="$separator" read -r pane_id kind state display_state session_name window_index pane_index pane_title pane_current_path window_name; do
+    if [ -z "${pane_id:-}" ]; then
+      continue
+    fi
+
+    set_tmux_target_option pane "$pane_id" "$pane_agent_option" "1"
+    set_tmux_target_option pane "$pane_id" "$pane_kind_label_option" "$(kind_label "$kind")"
+    set_tmux_target_option pane "$pane_id" "$pane_state_option" "$display_state"
+    set_tmux_target_option pane "$pane_id" "$pane_state_badge_option" "$(pane_state_badge "$display_state")"
+    set_tmux_target_option pane "$pane_id" "$pane_label_option" "$(pane_item_label "$window_name" "$pane_title" "$pane_current_path")"
+
+    aggregate_rows="${aggregate_rows}${session_name}${separator}${window_index}${separator}${display_state}"$'\n'
+  done <<EOF
+$agent_rows
+EOF
+
+  summary_rows="$(
+    printf '%s' "$aggregate_rows" | awk -F "$separator" -v OFS="$separator" '
+      {
+        session_key = "session" SUBSEP $1
+        window_key = "window" SUBSEP $1 ":" $2
+        state = $3
+
+        if (!(session_key in seen)) {
+          seen[session_key] = 1
+          order[++count] = session_key
+        }
+
+        if (!(window_key in seen)) {
+          seen[window_key] = 1
+          order[++count] = window_key
+        }
+
+        total[session_key]++
+        total[window_key]++
+
+        if (state == "attention") {
+          attention[session_key]++
+          attention[window_key]++
+        } else if (state == "done") {
+          waiting[session_key]++
+          waiting[window_key]++
+        } else if (state == "busy") {
+          busy[session_key]++
+          busy[window_key]++
+        } else if (state == "current") {
+          current[session_key]++
+          current[window_key]++
+        }
+      }
+      END {
+        for (i = 1; i <= count; i++) {
+          split(order[i], parts, SUBSEP)
+          scope = parts[1]
+          key = parts[2]
+          print scope, key, attention[order[i]] + 0, waiting[order[i]] + 0, busy[order[i]] + 0, current[order[i]] + 0, total[order[i]] + 0
+        }
+      }
+    '
+  )"
+
+  while IFS="$separator" read -r scope target attention_count done_count busy_count current_count pane_count; do
+    local summary
+
+    if [ -z "${scope:-}" ] || [ -z "${target:-}" ]; then
+      continue
+    fi
+
+    summary="$(summary_badge "$attention_count" "$done_count" "$busy_count" "$current_count" "$pane_count")"
+
+    case "$scope" in
+      session)
+        set_tmux_target_option session "$target" "$session_has_agents_option" "1"
+        set_tmux_target_option session "$target" "$session_summary_option" "$summary"
+        ;;
+      window)
+        set_tmux_target_option window "$target" "$window_has_agents_option" "1"
+        set_tmux_target_option window "$target" "$window_summary_option" "$summary"
+        ;;
+    esac
+  done <<EOF
+$summary_rows
+EOF
+}
+
 run_loop() {
   local first_pass="1"
-  local separator=$'\037'
 
   while true; do
     local interval
@@ -190,16 +430,18 @@ run_loop() {
     done_prompt_patterns="$(get_tmux_option "@agent_notify_done_prompt_patterns" "")"
 
     local panes_output
-    if ! panes_output="$(tmux list-panes -a -F "#{pane_id}${separator}#{pane_pid}${separator}#{session_name}${separator}#{window_index}${separator}#{pane_index}${separator}#{pane_active}${separator}#{window_active}${separator}#{session_attached}${separator}#{pane_title}" 2>/dev/null)"; then
+    if ! panes_output="$(tmux list-panes -a -F "#{pane_id}${separator}#{pane_pid}${separator}#{session_name}${separator}#{window_index}${separator}#{pane_index}${separator}#{pane_active}${separator}#{window_active}${separator}#{session_attached}${separator}#{pane_title}${separator}#{pane_current_path}${separator}#{window_name}" 2>/dev/null)"; then
       exit 0
     fi
 
     local attention_panes=""
     local done_panes=""
+    local all_panes=""
     local attention_count=0
     local done_count=0
+    local agent_rows=""
 
-    while IFS="$separator" read -r pane_id pane_pid session_name window_index pane_index pane_active window_active session_attached pane_title; do
+    while IFS="$separator" read -r pane_id pane_pid session_name window_index pane_index pane_active window_active session_attached pane_title pane_current_path window_name; do
       if [ -z "${pane_id:-}" ]; then
         continue
       fi
@@ -215,6 +457,9 @@ run_loop() {
       local state
       state="$(classify_state "$pane_text")"
 
+      local display_state
+      display_state="$(display_state_for_pane "$state" "$pane_active" "$window_active" "$session_attached")"
+
       local key
       key="$(pane_key "$pane_id")"
 
@@ -225,6 +470,9 @@ run_loop() {
       previous_signature="$(get_tmux_option "@agent_notify_signature_${key}" "")"
       set_tmux_option "@agent_notify_signature_${key}" "$signature"
       set_tmux_option "@agent_notify_state_${key}" "$state"
+
+      all_panes="${all_panes} ${pane_id}"
+      agent_rows="${agent_rows}${pane_id}${separator}${kind}${separator}${state}${separator}${display_state}${separator}${session_name}${separator}${window_index}${separator}${pane_index}${separator}${pane_title}${separator}${pane_current_path}${separator}${window_name}"$'\n'
 
       if is_actionable_pane "$pane_active" "$window_active" "$session_attached"; then
         case "$state" in
@@ -260,14 +508,18 @@ run_loop() {
 $panes_output
 EOF
 
-    local trimmed_attention trimmed_done new_status previous_status
+    apply_tree_metadata "$agent_rows"
+
+    local trimmed_attention trimmed_done trimmed_all new_status previous_status
     trimmed_attention="$(trim_whitespace "$attention_panes")"
     trimmed_done="$(trim_whitespace "$done_panes")"
+    trimmed_all="$(trim_whitespace "$all_panes")"
     new_status="$(status_text "$attention_count" "$done_count")"
     previous_status="$(get_tmux_option "$status_option" "")"
 
     set_tmux_option "$attention_panes_option" "$trimmed_attention"
     set_tmux_option "$done_panes_option" "$trimmed_done"
+    set_tmux_option "$all_panes_option" "$trimmed_all"
     set_tmux_option "$status_option" "$new_status"
 
     if [ "$new_status" != "$previous_status" ]; then
@@ -321,10 +573,12 @@ release_run_lock() {
     rmdir "$lock_dir" >/dev/null 2>&1 || true
   fi
 
+  clear_tree_metadata
   unset_tmux_option "$monitor_pid_option"
   set_tmux_option "$status_option" ""
   set_tmux_option "$attention_panes_option" ""
   set_tmux_option "$done_panes_option" ""
+  set_tmux_option "$all_panes_option" ""
 }
 
 stop_monitor() {
@@ -342,10 +596,12 @@ stop_monitor() {
 
   rm -f "${lock_dir}/pid" >/dev/null 2>&1 || true
   rmdir "$lock_dir" >/dev/null 2>&1 || true
+  clear_tree_metadata
   unset_tmux_option "$monitor_pid_option"
   set_tmux_option "$status_option" ""
   set_tmux_option "$attention_panes_option" ""
   set_tmux_option "$done_panes_option" ""
+  set_tmux_option "$all_panes_option" ""
 }
 
 case "${1:-run}" in

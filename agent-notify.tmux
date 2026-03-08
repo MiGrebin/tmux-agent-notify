@@ -5,6 +5,7 @@ source "$CURRENT_DIR/scripts/helpers.sh"
 
 default_key_binding="A"
 default_popup_key="a"
+default_dashboard_mode="native"
 default_interval="5"
 default_capture_lines="80"
 default_popup_width="80%"
@@ -53,6 +54,7 @@ set_popup_binding() {
 main() {
   set_default_option "@agent_notify_key" "$default_key_binding"
   set_default_option "@agent_notify_popup_key" "$default_popup_key"
+  set_default_option "@agent_notify_dashboard_mode" "$default_dashboard_mode"
   set_default_option "@agent_notify_interval" "$default_interval"
   set_default_option "@agent_notify_capture_lines" "$default_capture_lines"
   set_default_option "@agent_notify_popup_width" "$default_popup_width"
@@ -64,6 +66,7 @@ main() {
   set_default_option "@agent_notify_status" ""
   set_default_option "@agent_notify_attention_panes" ""
   set_default_option "@agent_notify_done_panes" ""
+  set_default_option "@agent_notify_all_panes" ""
 
   ensure_status_segment
   set_key_binding
