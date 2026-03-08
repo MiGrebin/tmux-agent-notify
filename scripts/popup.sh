@@ -23,11 +23,11 @@ repeat_char() {
   local count="$2"
 
   if [ "$count" -le 0 ]; then
-    printf '\n'
+    printf ''
     return
   fi
 
-  printf '%*s\n' "$count" '' | tr ' ' "$char"
+  printf '%*s' "$count" '' | tr ' ' "$char"
 }
 
 state_rank() {
@@ -253,7 +253,7 @@ project_summary_text() {
   summary="$(project_summary "$project_name")"
   IFS="$separator" read -r attention_count done_count busy_count current_count pane_count is_current_project <<< "$summary"
 
-  printf '%s %s | !%s input | D%s waiting | B%s busy | C%s current\n' \
+  printf '%s %s | !%s input | D%s waiting | B%s busy | C%s current' \
     "$pane_count" \
     "$(pane_word "$pane_count")" \
     "$attention_count" \
@@ -305,13 +305,14 @@ global_summary_line() {
 
 render_project_header() {
   local project_name="$1"
-  local cols divider summary_line
+  local cols divider subdivider summary_line
   local summary
   local attention_count done_count busy_count current_count pane_count is_current_project
   local current_suffix
 
   cols="$(screen_width)"
   divider="$(repeat_char '=' "$cols")"
+  subdivider="$(repeat_char '-' "$cols")"
   summary="$(project_summary "$project_name")"
   IFS="$separator" read -r attention_count done_count busy_count current_count pane_count is_current_project <<< "$summary"
   summary_line="$(project_summary_text "$project_name")"
@@ -321,17 +322,17 @@ render_project_header() {
     current_suffix=" [current]"
   fi
 
-  printf '%s%s%s' "$ansi_gray" "$divider" "$ansi_reset"
+  printf '%s%s%s\n' "$ansi_gray" "$divider" "$ansi_reset"
   printf '%sProject / tmux session:%s %s%s\n' \
     "$ansi_cyan" \
     "$ansi_reset" \
     "$project_name" \
     "$current_suffix"
-  printf '%s%s%s' \
+  printf '%s%s%s\n' \
     "$ansi_dim" \
     "$summary_line" \
     "$ansi_reset"
-  printf '%s%s%s' "$ansi_gray" "$(repeat_char '-' "$cols")" "$ansi_reset"
+  printf '%s%s%s\n' "$ansi_gray" "$subdivider" "$ansi_reset"
 }
 
 render_row() {
