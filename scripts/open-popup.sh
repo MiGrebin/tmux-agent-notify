@@ -38,7 +38,7 @@ open_native_dashboard() {
 
 main() {
   local dashboard_mode
-  dashboard_mode="$(get_tmux_option "@agent_notify_dashboard_mode" "native")"
+  dashboard_mode="$(get_tmux_option "@agent_notify_dashboard_mode" "popup")"
 
   case "$dashboard_mode" in
     popup)

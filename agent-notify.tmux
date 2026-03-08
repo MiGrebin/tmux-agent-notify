@@ -5,7 +5,7 @@ source "$CURRENT_DIR/scripts/helpers.sh"
 
 default_key_binding="A"
 default_popup_key="a"
-default_dashboard_mode="native"
+default_dashboard_mode="popup"
 default_interval="5"
 default_capture_lines="80"
 default_popup_width="80%"
