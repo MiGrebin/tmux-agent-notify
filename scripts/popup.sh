@@ -18,6 +18,18 @@ ansi_green=$'\033[32m'
 ansi_cyan=$'\033[36m'
 ansi_gray=$'\033[90m'
 
+repeat_char() {
+  local char="$1"
+  local count="$2"
+
+  if [ "$count" -le 0 ]; then
+    printf '\n'
+    return
+  fi
+
+  printf '%*s\n' "$count" '' | tr ' ' "$char"
+}
+
 state_rank() {
   case "$1" in
     attention) printf '0' ;;
@@ -233,6 +245,23 @@ project_summary() {
     "$is_current_project"
 }
 
+project_summary_text() {
+  local project_name="$1"
+  local summary
+  local attention_count done_count busy_count current_count pane_count is_current_project
+
+  summary="$(project_summary "$project_name")"
+  IFS="$separator" read -r attention_count done_count busy_count current_count pane_count is_current_project <<< "$summary"
+
+  printf '%s %s | !%s input | D%s waiting | B%s busy | C%s current\n' \
+    "$pane_count" \
+    "$(pane_word "$pane_count")" \
+    "$attention_count" \
+    "$done_count" \
+    "$busy_count" \
+    "$current_count"
+}
+
 global_summary_line() {
   local project_count=0
   local attention_count=0
@@ -276,29 +305,33 @@ global_summary_line() {
 
 render_project_header() {
   local project_name="$1"
+  local cols divider summary_line
   local summary
   local attention_count done_count busy_count current_count pane_count is_current_project
   local current_suffix
 
+  cols="$(screen_width)"
+  divider="$(repeat_char '=' "$cols")"
   summary="$(project_summary "$project_name")"
   IFS="$separator" read -r attention_count done_count busy_count current_count pane_count is_current_project <<< "$summary"
+  summary_line="$(project_summary_text "$project_name")"
 
   current_suffix=""
   if [ "$is_current_project" -eq 1 ]; then
     current_suffix=" [current]"
   fi
 
-  printf '%s%s%s  !%s D%s B%s C%s  %s %s%s\n' \
-    "$ansi_bold" \
+  printf '%s%s%s' "$ansi_gray" "$divider" "$ansi_reset"
+  printf '%sProject / tmux session:%s %s%s\n' \
+    "$ansi_cyan" \
+    "$ansi_reset" \
     "$project_name" \
-    "$current_suffix" \
-    "$attention_count" \
-    "$done_count" \
-    "$busy_count" \
-    "$current_count" \
-    "$pane_count" \
-    "$(pane_word "$pane_count")" \
+    "$current_suffix"
+  printf '%s%s%s' \
+    "$ansi_dim" \
+    "$summary_line" \
     "$ansi_reset"
+  printf '%s%s%s' "$ansi_gray" "$(repeat_char '-' "$cols")" "$ansi_reset"
 }
 
 render_row() {
@@ -371,6 +404,7 @@ build_screen() {
 
   printf '%sAgent Sessions%s\n' "$ansi_bold" "$ansi_reset"
   printf '%s%s%s\n' "$ansi_dim" "$(global_summary_line)" "$ansi_reset"
+  printf '%sEach project below is one tmux session%s\n' "$ansi_dim" "$ansi_reset"
   printf '%sEnter jump | j/k move | [/] project | r refresh | q close%s\n' "$ansi_dim" "$ansi_reset"
   printf '\n'
 
