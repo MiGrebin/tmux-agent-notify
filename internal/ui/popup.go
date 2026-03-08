@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"sort"
@@ -52,6 +54,8 @@ type projectSummary struct {
 
 type terminalState struct {
 	original string
+	tty      *os.File
+	closeTTY bool
 }
 
 func NewPopup(tmux *tmuxcli.Client) *Popup {
@@ -59,7 +63,7 @@ func NewPopup(tmux *tmuxcli.Client) *Popup {
 }
 
 func (p *Popup) Run() error {
-	state, err := enterRawMode()
+	input, state, err := enterRawMode()
 	if err != nil {
 		return err
 	}
@@ -85,8 +89,11 @@ func (p *Popup) Run() error {
 			lastRefresh = time.Now()
 		}
 
-		n, err := os.Stdin.Read(buffer)
+		n, err := input.Read(buffer)
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				continue
+			}
 			return err
 		}
 		if n == 0 {
@@ -534,33 +541,64 @@ func (p *Popup) screenWidth() int {
 	return width
 }
 
-func enterRawMode() (*terminalState, error) {
+func enterRawMode() (*os.File, *terminalState, error) {
+	input, closeTTY, err := openTerminal()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	cmd := exec.Command("stty", "-g")
-	cmd.Stdin = os.Stdin
+	cmd.Stdin = input
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		if closeTTY {
+			_ = input.Close()
+		}
+		return nil, nil, err
 	}
 
-	state := &terminalState{original: strings.TrimSpace(string(output))}
+	state := &terminalState{
+		original: strings.TrimSpace(string(output)),
+		tty:      input,
+		closeTTY: closeTTY,
+	}
 
 	rawCmd := exec.Command("stty", "raw", "-echo", "min", "0", "time", "1")
-	rawCmd.Stdin = os.Stdin
+	rawCmd.Stdin = input
 	if err := rawCmd.Run(); err != nil {
-		return nil, err
+		if closeTTY {
+			_ = input.Close()
+		}
+		return nil, nil, err
 	}
 
-	return state, nil
+	return input, state, nil
+}
+
+func openTerminal() (*os.File, bool, error) {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err == nil {
+		return tty, true, nil
+	}
+
+	if os.Stdin == nil {
+		return nil, false, err
+	}
+
+	return os.Stdin, false, nil
 }
 
 func (t *terminalState) restore() {
-	if t == nil || t.original == "" {
+	if t == nil || t.original == "" || t.tty == nil {
 		return
 	}
 
 	cmd := exec.Command("stty", t.original)
-	cmd.Stdin = os.Stdin
+	cmd.Stdin = t.tty
 	_ = cmd.Run()
+	if t.closeTTY {
+		_ = t.tty.Close()
+	}
 }
 
 func stateBadge(state monitor.State) string {
