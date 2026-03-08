@@ -72,8 +72,7 @@ func (p *Popup) Run() error {
 	p.tty = input
 
 	fmt.Print("\033[?25l")
-	fmt.Print("\033[?7l")
-	defer fmt.Print("\033[0m\033[?7h\033[?25h")
+	defer fmt.Print("\033[0m\033[?25h")
 
 	if err := p.collectRows(); err != nil {
 		return err
@@ -602,7 +601,7 @@ func enterRawMode() (*os.File, *terminalState, error) {
 		closeTTY: closeTTY,
 	}
 
-	rawCmd := exec.Command("stty", "raw", "-echo", "min", "0", "time", "1")
+	rawCmd := exec.Command("stty", "-icanon", "-echo", "min", "0", "time", "1")
 	rawCmd.Stdin = input
 	if err := rawCmd.Run(); err != nil {
 		if closeTTY {
