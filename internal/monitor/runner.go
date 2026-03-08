@@ -216,14 +216,22 @@ func (r *Runner) runIteration(settings settings, firstPass bool) error {
 }
 
 func (r *Runner) applyTreeMetadata(rows []agentRow) {
-	r.clearTreeMetadata()
 	if len(rows) == 0 {
+		r.clearTreeMetadata()
 		return
 	}
 
 	aggregates := map[aggregateKey]*aggregateCounts{}
+	currentPaneIDs := make(map[string]struct{}, len(rows))
+	currentWindowTargets := make(map[string]struct{})
+	currentSessionNames := make(map[string]struct{})
 
 	for _, row := range rows {
+		currentPaneIDs[row.PaneID] = struct{}{}
+		windowTarget := fmt.Sprintf("%s:%d", row.SessionName, row.WindowIndex)
+		currentWindowTargets[windowTarget] = struct{}{}
+		currentSessionNames[row.SessionName] = struct{}{}
+
 		_ = r.tmux.SetTargetOption("pane", row.PaneID, config.PaneAgentOption, "1")
 		_ = r.tmux.SetTargetOption("pane", row.PaneID, config.PaneKindLabelOption, KindLabel(row.Kind))
 		_ = r.tmux.SetTargetOption("pane", row.PaneID, config.PaneStateOption, string(row.DisplayState))
@@ -231,7 +239,6 @@ func (r *Runner) applyTreeMetadata(rows []agentRow) {
 		_ = r.tmux.SetTargetOption("pane", row.PaneID, config.PaneLabelOption, PaneItemLabel(row.WindowName, row.PaneTitle, row.PanePath))
 
 		r.bumpAggregate(aggregates, aggregateKey{scope: "session", target: row.SessionName}, row.DisplayState)
-		windowTarget := fmt.Sprintf("%s:%d", row.SessionName, row.WindowIndex)
 		r.bumpAggregate(aggregates, aggregateKey{scope: "window", target: windowTarget}, row.DisplayState)
 	}
 
@@ -246,6 +253,8 @@ func (r *Runner) applyTreeMetadata(rows []agentRow) {
 			_ = r.tmux.SetTargetOption("window", key.target, config.WindowSummaryOption, summary)
 		}
 	}
+
+	r.clearStaleTreeMetadata(currentPaneIDs, currentWindowTargets, currentSessionNames)
 }
 
 func (r *Runner) bumpAggregate(aggregates map[aggregateKey]*aggregateCounts, key aggregateKey, state State) {
@@ -281,6 +290,32 @@ func (r *Runner) clearTreeMetadata() {
 
 	sessionNames, _ := r.tmux.ListSessionNames("#{==:#{@agent_notify_session_has_agents},1}")
 	for _, sessionName := range sessionNames {
+		_ = r.tmux.SetTargetOption("session", sessionName, config.SessionHasAgentsOption, "0")
+	}
+}
+
+func (r *Runner) clearStaleTreeMetadata(currentPaneIDs, currentWindowTargets, currentSessionNames map[string]struct{}) {
+	paneIDs, _ := r.tmux.ListPaneIDs("#{==:#{@agent_notify_is_agent},1}")
+	for _, paneID := range paneIDs {
+		if _, ok := currentPaneIDs[paneID]; ok {
+			continue
+		}
+		_ = r.tmux.SetTargetOption("pane", paneID, config.PaneAgentOption, "0")
+	}
+
+	windowTargets, _ := r.tmux.ListWindowTargets("#{==:#{@agent_notify_window_has_agents},1}")
+	for _, target := range windowTargets {
+		if _, ok := currentWindowTargets[target]; ok {
+			continue
+		}
+		_ = r.tmux.SetTargetOption("window", target, config.WindowHasAgentsOption, "0")
+	}
+
+	sessionNames, _ := r.tmux.ListSessionNames("#{==:#{@agent_notify_session_has_agents},1}")
+	for _, sessionName := range sessionNames {
+		if _, ok := currentSessionNames[sessionName]; ok {
+			continue
+		}
 		_ = r.tmux.SetTargetOption("session", sessionName, config.SessionHasAgentsOption, "0")
 	}
 }
