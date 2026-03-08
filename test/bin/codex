@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+state="${1:-busy}"
+
+case "$state" in
+  attention)
+    printf 'Planning changes\n'
+    printf 'Would you like to run the following command?\n'
+    printf 'approve\n'
+    ;;
+  done)
+    printf 'Work complete\n'
+    printf '> ready\n'
+    ;;
+  busy)
+    printf 'Working...\n'
+    ;;
+  *)
+    printf 'Unknown state: %s\n' "$state" >&2
+    exit 1
+    ;;
+esac
+
+while true; do
+  sleep 60
+done

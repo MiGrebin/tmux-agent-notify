@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+state="${1:-busy}"
+
+case "$state" in
+  attention)
+    printf 'Reviewing task\n'
+    printf 'permission required\n'
+    ;;
+  done)
+    printf 'All set\n'
+    printf '> ready\n'
+    ;;
+  busy)
+    printf 'Analyzing repository\n'
+    ;;
+  *)
+    printf 'Unknown state: %s\n' "$state" >&2
+    exit 1
+    ;;
+esac
+
+while true; do
+  sleep 60
+done
