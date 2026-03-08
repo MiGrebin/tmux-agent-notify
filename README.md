@@ -2,9 +2,9 @@
 
 Tmux plugin for Codex and Claude Code workflows.
 
-This branch rewrites the prototype around a Go CLI and keeps a thin shell shim
-for tmux/TPM entrypoints. The monitor, pane classification, notifications,
-navigation, and popup UI now live in Go.
+The plugin is implemented as a Go CLI with thin shell shims for tmux/TPM
+entrypoints. The monitor, pane classification, notifications, navigation, and
+popup UI now live in Go.
 
 It watches tmux panes, identifies Codex or Claude sessions from the pane
 process tree, and then:
