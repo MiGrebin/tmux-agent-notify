@@ -58,44 +58,6 @@ status_text() {
   printf '%s\n' "$text"
 }
 
-agent_kind_for_pane() {
-  local pane_pid="$1"
-  local pane_title="$2"
-  local command_line=""
-
-  command_line="$(ps -axo ppid=,command= 2>/dev/null | awk -v pane_pid="$pane_pid" -v pattern="$agent_process_pattern" '
-    BEGIN { IGNORECASE = 1 }
-    $1 == pane_pid {
-      command = substr($0, index($0, $2))
-      if (command ~ pattern) {
-        print command
-        exit
-      }
-    }
-  ')" || true
-
-  if [ -n "$command_line" ]; then
-    if printf '%s\n' "$command_line" | grep -Eiq 'claude'; then
-      printf 'claude\n'
-    else
-      printf 'codex\n'
-    fi
-    return 0
-  fi
-
-  if printf '%s\n' "$pane_title" | grep -Eiq 'claude'; then
-    printf 'claude\n'
-    return 0
-  fi
-
-  if printf '%s\n' "$pane_title" | grep -Eiq 'codex'; then
-    printf 'codex\n'
-    return 0
-  fi
-
-  return 1
-}
-
 tail_nonempty_lines() {
   local text="$1"
   local limit="$2"
@@ -243,7 +205,7 @@ run_loop() {
       fi
 
       local kind
-      if ! kind="$(agent_kind_for_pane "$pane_pid" "$pane_title")"; then
+      if ! kind="$(agent_kind_for_pane "$pane_pid" "$pane_title" "$agent_process_pattern")"; then
         continue
       fi
 

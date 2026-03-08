@@ -9,6 +9,7 @@ process tree, and then:
 - sends a macOS notification when a session is idle and waiting for you
 - adds an `AI` segment to `status-right` with attention and done counts
 - binds `prefix + A` to jump to the next pane that needs attention
+- binds `prefix + a` to open a popup with all current Codex and Claude panes
 
 ## Install with TPM
 
@@ -30,8 +31,27 @@ run-shell '~/Projects/tmux-agent-notify/agent-notify.tmux'
 
 ```tmux
 set -g @agent_notify_key 'A'
+set -g @agent_notify_popup_key 'a'
 set -g @agent_notify_interval '5'
 set -g @agent_notify_capture_lines '80'
+```
+
+## Popup dashboard
+
+Inside the popup:
+
+- `j` / `k` or arrow keys move selection
+- `Enter` jumps to the selected pane
+- `1`-`9` jump directly
+- `r` refreshes
+- `q` closes
+
+Popup sizing is configurable:
+
+```tmux
+set -g @agent_notify_popup_width '80%'
+set -g @agent_notify_popup_height '70%'
+set -g @agent_notify_popup_title 'Agent Sessions'
 ```
 
 ## Useful overrides

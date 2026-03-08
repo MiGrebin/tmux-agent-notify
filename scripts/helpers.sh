@@ -46,3 +46,61 @@ has_list_item() {
 trim_whitespace() {
   printf '%s\n' "$1" | awk '{$1=$1; print}'
 }
+
+agent_kind_for_pane() {
+  local pane_pid="$1"
+  local pane_title="$2"
+  local process_pattern="$3"
+  local command_line=""
+
+  command_line="$(ps -axo ppid=,command= 2>/dev/null | awk -v pane_pid="$pane_pid" -v pattern="$process_pattern" '
+    BEGIN { IGNORECASE = 1 }
+    $1 == pane_pid {
+      command = substr($0, index($0, $2))
+      if (command ~ pattern) {
+        print command
+        exit
+      }
+    }
+  ')" || true
+
+  if [ -n "$command_line" ]; then
+    if printf '%s\n' "$command_line" | grep -Eiq 'claude'; then
+      printf 'claude\n'
+    else
+      printf 'codex\n'
+    fi
+    return 0
+  fi
+
+  if printf '%s\n' "$pane_title" | grep -Eiq 'claude'; then
+    printf 'claude\n'
+    return 0
+  fi
+
+  if printf '%s\n' "$pane_title" | grep -Eiq 'codex'; then
+    printf 'codex\n'
+    return 0
+  fi
+
+  return 1
+}
+
+pane_target() {
+  tmux display-message -p -t "$1" '#{session_name}:#{window_index}' 2>/dev/null || true
+}
+
+switch_to_pane() {
+  local pane_id="$1"
+  local target
+
+  target="$(pane_target "$pane_id")"
+
+  if [ -z "$target" ]; then
+    return 1
+  fi
+
+  tmux switch-client -t "${target%%:*}"
+  tmux select-window -t "$target"
+  tmux select-pane -t "$pane_id"
+}

@@ -33,21 +33,6 @@ pick_next_pane() {
   return 1
 }
 
-switch_to_pane() {
-  local pane_id="$1"
-  local target
-
-  target="$(tmux display-message -p -t "$pane_id" '#{session_name}:#{window_index}' 2>/dev/null || true)"
-
-  if [ -z "$target" ]; then
-    return 1
-  fi
-
-  tmux switch-client -t "${target%%:*}"
-  tmux select-window -t "$target"
-  tmux select-pane -t "$pane_id"
-}
-
 main() {
   local attention_panes done_panes panes last_target next_pane
   attention_panes="$(get_tmux_option "@agent_notify_attention_panes" "")"
