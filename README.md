@@ -2,6 +2,10 @@
 
 Tmux plugin for Codex and Claude Code workflows.
 
+This branch rewrites the prototype around a Go CLI and keeps a thin shell shim
+for tmux/TPM entrypoints. The monitor, pane classification, notifications,
+navigation, and popup UI now live in Go.
+
 It watches tmux panes, identifies Codex or Claude sessions from the pane
 process tree, and then:
 
@@ -26,6 +30,36 @@ Then reload tmux and install plugins with TPM.
 ```tmux
 run-shell '~/Projects/tmux-agent-notify/agent-notify.tmux'
 ```
+
+## Development
+
+The tmux entry scripts build `bin/agent-notify` on demand through
+`scripts/exec.sh`. For now that means local installs need `go` available in
+`PATH`.
+
+Run tests with a workspace-local build cache:
+
+```bash
+GOCACHE=$PWD/.gocache go test ./...
+```
+
+Run a tmux smoke test with fake agent panes:
+
+```bash
+./scripts/smoke-test.sh
+```
+
+That script creates a temporary tmux session, starts one fake Codex pane in
+`attention`, one fake Claude pane in `done`, and one fake Codex pane in
+`busy`, then checks the monitor metadata and prints the session to attach to.
+
+Project layout:
+
+- `cmd/agent-notify`: CLI entrypoint and subcommands
+- `internal/tmuxcli`: tmux command wrapper
+- `internal/agent`: process-tree detection for Codex and Claude panes
+- `internal/monitor`: pane classification, metadata sync, background monitor
+- `internal/ui`: popup dashboard UI
 
 ## Defaults
 
