@@ -9,7 +9,7 @@ process tree, and then:
 - sends a macOS notification when a session is idle and waiting for you
 - adds an `AI` segment to `status-right` with attention and done counts
 - binds `prefix + A` to jump to the next pane that needs attention
-- binds `prefix + a` to open a popup with all current Codex and Claude panes
+- binds `prefix + a` to open a popup with all current Codex and Claude panes, grouped by tmux session
 
 ## Install with TPM
 
@@ -45,6 +45,8 @@ Inside the popup:
 - `1`-`9` jump directly
 - `r` refreshes
 - `q` closes
+
+Rows are grouped by tmux `session_name`, which the plugin treats as the project name.
 
 Popup sizing is configurable:
 

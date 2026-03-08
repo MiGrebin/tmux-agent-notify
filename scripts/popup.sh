@@ -18,6 +18,43 @@ state_label() {
   esac
 }
 
+state_rank() {
+  case "$1" in
+    attention) printf '0' ;;
+    done) printf '1' ;;
+    busy) printf '2' ;;
+    *) printf '9' ;;
+  esac
+}
+
+is_current_row() {
+  local pane_active="$1"
+  local window_active="$2"
+  local session_attached="$3"
+
+  if [ "$session_attached" -gt 0 ] && [ "$window_active" -eq 1 ] && [ "$pane_active" -eq 1 ]; then
+    return 0
+  fi
+
+  return 1
+}
+
+pane_word() {
+  if [ "$1" -eq 1 ]; then
+    printf 'pane'
+  else
+    printf 'panes'
+  fi
+}
+
+project_word() {
+  if [ "$1" -eq 1 ]; then
+    printf 'project'
+  else
+    printf 'projects'
+  fi
+}
+
 truncate_text() {
   local text="$1"
   local width="$2"
@@ -29,9 +66,59 @@ truncate_text() {
   fi
 }
 
+sort_rows() {
+  local current_session
+  local sorted_rows
+  local row
+
+  if [ "${#rows[@]}" -eq 0 ]; then
+    return
+  fi
+
+  current_session="$(tmux display-message -p '#S' 2>/dev/null || true)"
+
+  sorted_rows="$(
+    for row in "${rows[@]}"; do
+      local pane_id kind state session_name window_index pane_index pane_title pane_current_path pane_active window_active session_attached
+      local session_order
+
+      IFS="$separator" read -r pane_id kind state session_name window_index pane_index pane_title pane_current_path pane_active window_active session_attached <<< "$row"
+
+      session_order="1"
+      if [ "$session_name" = "$current_session" ]; then
+        session_order="0"
+      fi
+
+      printf '%s\t%s\t%s\t%05d\t%05d\t%s\n' \
+        "$session_order" \
+        "$(printf '%s' "$session_name" | tr '[:upper:]' '[:lower:]')" \
+        "$(state_rank "$state")" \
+        "$window_index" \
+        "$pane_index" \
+        "$row"
+    done | LC_ALL=C sort -t $'\t' -k1,1n -k2,2 -k3,3n -k4,4n -k5,5n | cut -f6-
+  )"
+
+  rows=()
+  while IFS= read -r row; do
+    if [ -n "$row" ]; then
+      rows+=("$row")
+    fi
+  done <<EOF
+$sorted_rows
+EOF
+}
+
 collect_rows() {
   local process_pattern
   local panes_output
+  local previous_selected_pane=""
+  local i
+
+  if [ "${#rows[@]}" -gt 0 ] && [ "$selected_index" -lt "${#rows[@]}" ]; then
+    IFS="$separator" read -r previous_selected_pane _ <<< "${rows[$selected_index]}"
+  fi
+
   process_pattern="$(get_tmux_option "@agent_notify_process_pattern" '(/bin/codex|/@openai/codex|(^|[[:space:]/])claude([[:space:]]|$)|/@anthropic-ai/claude-code)')"
 
   rows=()
@@ -56,9 +143,22 @@ collect_rows() {
 $panes_output
 EOF
 
+  sort_rows
+
   if [ "${#rows[@]}" -eq 0 ]; then
     selected_index=0
     return
+  fi
+
+  if [ -n "$previous_selected_pane" ]; then
+    for i in "${!rows[@]}"; do
+      local pane_id
+      IFS="$separator" read -r pane_id _ <<< "${rows[$i]}"
+      if [ "$pane_id" = "$previous_selected_pane" ]; then
+        selected_index="$i"
+        return
+      fi
+    done
   fi
 
   if [ "$selected_index" -ge "${#rows[@]}" ]; then
@@ -66,8 +166,111 @@ EOF
   fi
 }
 
+project_summary() {
+  local project_name="$1"
+  local attention_count=0
+  local done_count=0
+  local busy_count=0
+  local pane_count=0
+  local is_current_project=0
+  local row
+
+  for row in "${rows[@]}"; do
+    local pane_id kind state session_name window_index pane_index pane_title pane_current_path pane_active window_active session_attached
+
+    IFS="$separator" read -r pane_id kind state session_name window_index pane_index pane_title pane_current_path pane_active window_active session_attached <<< "$row"
+
+    if [ "$session_name" != "$project_name" ]; then
+      continue
+    fi
+
+    pane_count=$((pane_count + 1))
+
+    case "$state" in
+      attention) attention_count=$((attention_count + 1)) ;;
+      done) done_count=$((done_count + 1)) ;;
+      busy) busy_count=$((busy_count + 1)) ;;
+    esac
+
+    if is_current_row "$pane_active" "$window_active" "$session_attached"; then
+      is_current_project=1
+    fi
+  done
+
+  printf '%s%s%s%s%s%s%s%s%s\n' \
+    "$attention_count" \
+    "$separator" \
+    "$done_count" \
+    "$separator" \
+    "$busy_count" \
+    "$separator" \
+    "$pane_count" \
+    "$separator" \
+    "$is_current_project"
+}
+
+global_summary_line() {
+  local project_count=0
+  local attention_count=0
+  local done_count=0
+  local busy_count=0
+  local previous_project=""
+  local row
+
+  for row in "${rows[@]}"; do
+    local pane_id kind state session_name
+
+    IFS="$separator" read -r pane_id kind state session_name _ <<< "$row"
+
+    if [ "$session_name" != "$previous_project" ]; then
+      project_count=$((project_count + 1))
+      previous_project="$session_name"
+    fi
+
+    case "$state" in
+      attention) attention_count=$((attention_count + 1)) ;;
+      done) done_count=$((done_count + 1)) ;;
+      busy) busy_count=$((busy_count + 1)) ;;
+    esac
+  done
+
+  printf '%s %s  !%s needs input  D%s waiting  B%s busy\n' \
+    "$project_count" \
+    "$(project_word "$project_count")" \
+    "$attention_count" \
+    "$done_count" \
+    "$busy_count"
+}
+
+render_project_header() {
+  local project_name="$1"
+  local summary
+  local attention_count done_count busy_count pane_count is_current_project
+  local current_suffix
+
+  summary="$(project_summary "$project_name")"
+  IFS="$separator" read -r attention_count done_count busy_count pane_count is_current_project <<< "$summary"
+
+  current_suffix=""
+  if [ "$is_current_project" -eq 1 ]; then
+    current_suffix=" [current]"
+  fi
+
+  printf 'Project: %s%s  !%s D%s B%s  %s %s\n' \
+    "$project_name" \
+    "$current_suffix" \
+    "$attention_count" \
+    "$done_count" \
+    "$busy_count" \
+    "$pane_count" \
+    "$(pane_word "$pane_count")"
+  printf '   %-3s %-11s %-7s %-6s %s\n' '#' 'State' 'Agent' 'Win' 'Title'
+}
+
 render_rows() {
   local i
+  local previous_project=""
+
   printf 'Agent Sessions\n\n'
   printf 'j/k move  Enter jump  1-9 direct jump  r refresh  q quit\n\n'
 
@@ -76,7 +279,7 @@ render_rows() {
     return
   fi
 
-  printf '%-2s %-3s %-11s %-7s %-18s %s\n' '' '#' 'State' 'Agent' 'Target' 'Title'
+  printf '%s\n\n' "$(global_summary_line)"
 
   for i in "${!rows[@]}"; do
     local pane_id kind state session_name window_index pane_index pane_title pane_current_path pane_active window_active session_attached
@@ -84,23 +287,37 @@ render_rows() {
 
     IFS="$separator" read -r pane_id kind state session_name window_index pane_index pane_title pane_current_path pane_active window_active session_attached <<< "${rows[$i]}"
 
+    if [ "$session_name" != "$previous_project" ]; then
+      if [ -n "$previous_project" ]; then
+        printf '\n'
+      fi
+      render_project_header "$session_name"
+      previous_project="$session_name"
+    fi
+
     marker=' '
     if [ "$i" -eq "$selected_index" ]; then
       marker='>'
     fi
 
     label="$(state_label "$state")"
-    if [ "$session_attached" -gt 0 ] && [ "$window_active" -eq 1 ] && [ "$pane_active" -eq 1 ]; then
+    if is_current_row "$pane_active" "$window_active" "$session_attached"; then
       label='current'
     fi
 
-    target="${session_name}:${window_index}.${pane_index}"
+    target="${window_index}.${pane_index}"
     title="$pane_title"
     if [ -z "$title" ]; then
       title="$pane_current_path"
     fi
 
-    printf '%-2s %-3s %-11s %-7s %-18s %s\n' "$marker" "$((i + 1))" "$(truncate_text "$label" 11)" "$kind" "$(truncate_text "$target" 18)" "$(truncate_text "$title" 44)"
+    printf '%-2s %-3s %-11s %-7s %-6s %s\n' \
+      "$marker" \
+      "$((i + 1))" \
+      "$(truncate_text "$label" 11)" \
+      "$kind" \
+      "$(truncate_text "$target" 6)" \
+      "$(truncate_text "$title" 52)"
   done
 
   printf '\n'
@@ -118,14 +335,19 @@ render_selected_details() {
   IFS="$separator" read -r pane_id kind state session_name window_index pane_index pane_title pane_current_path pane_active window_active session_attached <<< "${rows[$selected_index]}"
 
   current_line='no'
-  if [ "$session_attached" -gt 0 ] && [ "$window_active" -eq 1 ] && [ "$pane_active" -eq 1 ]; then
+  if is_current_row "$pane_active" "$window_active" "$session_attached"; then
     current_line='yes'
   fi
 
-  printf 'Selected: %s %s:%s.%s\n' "$kind" "$session_name" "$window_index" "$pane_index"
+  printf 'Selected: %s\n' "$pane_id"
+  printf 'Project:  %s\n' "$session_name"
+  printf 'Target:   %s:%s.%s\n' "$session_name" "$window_index" "$pane_index"
   printf 'State:    %s\n' "$(state_label "$state")"
+  printf 'Agent:    %s\n' "$kind"
   printf 'Current:  %s\n' "$current_line"
-  printf 'Pane:     %s\n' "$pane_id"
+  if [ -n "$pane_title" ]; then
+    printf 'Title:    %s\n' "$pane_title"
+  fi
   printf 'Path:     %s\n' "$pane_current_path"
 }
 
