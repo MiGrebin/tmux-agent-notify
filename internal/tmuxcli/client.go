@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-const separator = "\x1f"
+const (
+	separator        = "\x1f"
+	escapedSeparator = `\037`
+)
 
 type Client struct {
 	Binary string
@@ -186,7 +189,7 @@ func (c *Client) ListPanesAll() ([]Pane, error) {
 	lines := splitLines(output)
 	panes := make([]Pane, 0, len(lines))
 	for _, line := range lines {
-		fields := strings.Split(line, separator)
+		fields := splitStructuredFields(line)
 		if len(fields) != 11 {
 			continue
 		}
@@ -229,7 +232,7 @@ func (c *Client) ListAgentPanes() ([]AgentPane, error) {
 	lines := splitLines(output)
 	panes := make([]AgentPane, 0, len(lines))
 	for _, line := range lines {
-		fields := strings.Split(line, separator)
+		fields := splitStructuredFields(line)
 		if len(fields) != 8 {
 			continue
 		}
@@ -287,4 +290,14 @@ func splitLines(value string) []string {
 		}
 	}
 	return lines
+}
+
+func splitStructuredFields(value string) []string {
+	if strings.Contains(value, separator) {
+		return strings.Split(value, separator)
+	}
+	if strings.Contains(value, escapedSeparator) {
+		return strings.Split(value, escapedSeparator)
+	}
+	return []string{value}
 }
