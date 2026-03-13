@@ -59,8 +59,10 @@ func bootstrap(tmux *tmuxcli.Client, root string, runner *monitor.Runner) error 
 		}
 	}
 
-	if err := ensureStatusSegment(tmux); err != nil {
-		return err
+	if tmux.Option("@agent_notify_no_status", "") != "1" {
+		if err := ensureStatusSegment(tmux); err != nil {
+			return err
+		}
 	}
 
 	nextPaneCommand := config.ShellQuote(filepath.Join(root, "scripts", "next-pane.sh"))
